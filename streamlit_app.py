@@ -68,6 +68,9 @@ ICON_FORECAST_URLS = {
     7: "https://data.meteo.tech/icon/a_pcpn_168.tif",
 }
 SPI_BASE_START = 1981
+ETO_METHOD_ID = "hargreaves_fao56_era5_land_v1"
+SOLAR_CONSTANT_MJ_M2_MIN = 0.0820
+MJ_M2_TO_MM_WATER = 0.408
 
 MESES = [
     "Ene", "Feb", "Mar", "Abr", "May", "Jun",
@@ -376,12 +379,27 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame,
         spi = _standardize_date(pd.read_csv(spi_path, encoding="utf-8-sig"))
 
         required_level = {"fecha", "nivel_diario_m"}
-        required_climate = {"fecha", "lluvia_mm", "eto_media_cuenca_mm", "balance_diario_mm"}
+        required_climate = {
+            "fecha",
+            "lluvia_mm",
+            "eto_media_cuenca_mm",
+            "balance_diario_mm",
+            "metodo_eto_id",
+        }
         required_spi = {"fecha", "spi_1", "spi_3", "spi_6"}
         if not required_level.issubset(level.columns):
             raise ValueError(f"El CSV de nivel requiere: {sorted(required_level)}")
         if not required_climate.issubset(climate.columns):
             raise ValueError(f"El CSV climático requiere: {sorted(required_climate)}")
+        method_ids = set(
+            climate["metodo_eto_id"].dropna().astype(str).unique()
+        )
+        if method_ids != {ETO_METHOD_ID}:
+            raise ValueError(
+                "El CSV climático no fue reconstruido completamente con "
+                "ETo Hargreaves. Ejecute una actualización completa desde "
+                "GitHub Actions antes de publicar esta versión."
+            )
         if not required_spi.issubset(spi.columns):
             raise ValueError(f"El CSV de SPI requiere: {sorted(required_spi)}")
 
@@ -1239,7 +1257,7 @@ def climate_series_chart(variable: str, window: int, start: pd.Timestamp, end: p
     data = climate.loc[climate["fecha"].between(start, end)].copy()
     mapping = {
         "Precipitación": (f"lluvia_acum_{window}d", "Precipitación acumulada", "mm", NAVY),
-        "ETo equivalente": (f"eto_acum_{window}d", "ETo equivalente acumulada", "mm", ORANGE),
+        "ETo Hargreaves": (f"eto_acum_{window}d", "ETo Hargreaves acumulada", "mm", ORANGE),
         "Balance P−ETo": (f"balance_{window}d", "Balance climático acumulado", "mm", TEAL),
     }
     col, title, unit, color = mapping[variable]
@@ -1318,7 +1336,7 @@ def climatology_chart() -> go.Figure:
         go.Scatter(
             x=MESES,
             y=clim["eto"],
-            name="ETo equivalente",
+            name="ETo Hargreaves",
             line=dict(color=ORANGE, width=2.4),
             mode="lines+markers",
         )
@@ -1571,14 +1589,67 @@ def _monthly_chirps_total(year: ee.Number, month: int) -> ee.Image:
     )
 
 
-def _era5_potential_evaporation_mm(image: ee.Image) -> ee.Image:
-    """Convierte la evaporación potencial diaria de ERA5-Land de m a mm."""
-    return (
-        ee.Image(image)
-        .select("potential_evaporation_sum")
-        .multiply(-1000)
+def _era5_hargreaves_eto_mm(image: ee.Image) -> ee.Image:
+    """Calcula ETo Hargreaves diaria en mm/día para cada píxel."""
+    image = ee.Image(image)
+    tmin_c = image.select("temperature_2m_min").subtract(273.15)
+    tmax_c = image.select("temperature_2m_max").subtract(273.15)
+    tmean_c = tmin_c.add(tmax_c).divide(2)
+    temperature_range = tmax_c.subtract(tmin_c).max(0)
+
+    day_of_year = ee.Number(
+        image.date().getRelative("day", "year")
+    ).add(1)
+    orbital_angle = day_of_year.multiply(2 * math.pi / 365)
+    inverse_distance = ee.Number(1).add(
+        orbital_angle.cos().multiply(0.033)
+    )
+    solar_declination = orbital_angle.subtract(1.39).sin().multiply(0.409)
+    declination_image = ee.Image.constant(solar_declination)
+
+    latitude_rad = (
+        ee.Image.pixelLonLat()
+        .select("latitude")
+        .multiply(math.pi / 180)
+    )
+    sunset_angle = (
+        latitude_rad.tan()
+        .multiply(declination_image.tan())
+        .multiply(-1)
+        .clamp(-1, 1)
+        .acos()
+    )
+    extraterrestrial_radiation_mj = (
+        ee.Image.constant(
+            (24 * 60 / math.pi) * SOLAR_CONSTANT_MJ_M2_MIN
+        )
+        .multiply(inverse_distance)
+        .multiply(
+            sunset_angle
+            .multiply(latitude_rad.sin())
+            .multiply(declination_image.sin())
+            .add(
+                latitude_rad.cos()
+                .multiply(declination_image.cos())
+                .multiply(sunset_angle.sin())
+            )
+        )
+    )
+    extraterrestrial_radiation_mm = (
+        extraterrestrial_radiation_mj.multiply(MJ_M2_TO_MM_WATER)
+    )
+
+    eto_image = (
+        tmean_c.add(17.8)
+        .max(0)
+        .multiply(temperature_range.sqrt())
+        .multiply(extraterrestrial_radiation_mm)
+        .multiply(0.0023)
         .max(0)
         .rename("value")
+    )
+    return ee.Image(
+        eto_image.copyProperties(image, ["system:time_start"])
     )
 
 
@@ -1588,7 +1659,8 @@ def _monthly_era5_eto_total(year: ee.Number, month: int) -> ee.Image:
     return (
         ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
         .filterDate(start, end)
-        .map(_era5_potential_evaporation_mm)
+        .select(["temperature_2m_min", "temperature_2m_max"])
+        .map(_era5_hargreaves_eto_mm)
         .sum()
         .rename("value")
     )
@@ -1680,7 +1752,7 @@ def get_geoportal_tile_url(
             }
             label = f"Precipitación media de {MESES[month - 1]} · CHIRPS {SPI_BASE_START}–{SPI_BASE_END}"
             legend = {"min": "0 mm/mes", "max": "450 mm/mes", "palette": vis["palette"]}
-        elif variable == "ETo equivalente media mensual histórica":
+        elif variable == "ETo Hargreaves media mensual histórica":
             years = ee.List.sequence(SPI_BASE_START, SPI_BASE_END)
             image = ee.ImageCollection.fromImages(
                 years.map(
@@ -1693,8 +1765,8 @@ def get_geoportal_tile_url(
                 "palette": ["FFF7BC", "FEC44F", "FE9929", "EC7014", "CC4C02", "8C2D04"],
             }
             label = (
-                f"ETo equivalente media de {MESES[month - 1]} · "
-                f"ERA5-Land {SPI_BASE_START}–{SPI_BASE_END}"
+                f"ETo Hargreaves media de {MESES[month - 1]} · "
+                f"ERA5-Land/FAO-56 {SPI_BASE_START}–{SPI_BASE_END}"
             )
             legend = {"min": "60 mm/mes", "max": "220 mm/mes", "palette": vis["palette"]}
         else:
@@ -2325,7 +2397,7 @@ with tab_summary:
     with c1:
         kpi_card(f"Precipitación · {window} d", f"{climate_row[f'lluvia_acum_{window}d']:.1f} mm", "Acumulado antecedente en el área aportante")
     with c2:
-        kpi_card(f"ETo equivalente · {window} d", f"{climate_row[f'eto_acum_{window}d']:.1f} mm", "Demanda evaporativa acumulada")
+        kpi_card(f"ETo Hargreaves · {window} d", f"{climate_row[f'eto_acum_{window}d']:.1f} mm", "Evapotranspiración de referencia acumulada")
     with c3:
         balance_value = climate_row[f"balance_{window}d"]
         kpi_card(f"Balance P−ETo · {window} d", f"{balance_value:.1f} mm", "Déficit" if balance_value < 0 else "Superávit")
@@ -2498,7 +2570,7 @@ with tab_level:
 with tab_climate:
     st.markdown("## Contexto climático antecedente")
     st.caption(
-        "Precipitación, ETo equivalente, balance climático e SPI se "
+        "Precipitación, ETo Hargreaves, balance climático e SPI se "
         "interpretan como contexto y no como predictores directos del nivel. "
         f"Última fecha común disponible: {CLIMATE_COMMON_END_DATE:%d/%m/%Y}."
     )
@@ -2526,7 +2598,7 @@ with tab_climate:
     with ctrl1:
         climate_variable = st.selectbox(
             "Variable principal",
-            ["Precipitación", "ETo equivalente", "Balance P−ETo"],
+            ["Precipitación", "ETo Hargreaves", "Balance P−ETo"],
             index=2,
         )
     with ctrl2:
@@ -2581,8 +2653,8 @@ with tab_climate:
     cards = st.columns(4)
     explanations = [
         ("Precipitación", "Describe el aporte atmosférico de agua. Los acumulados antecedentes permiten evaluar la humedad previa de la cuenca."),
-        ("ETo equivalente", "Representa la evaporación potencial diaria de ERA5-Land y ayuda a interpretar la intensidad de la estación seca."),
-        ("Balance P−ETo", "Resume de forma simplificada el superávit o déficit climático antecedente usando la ETo equivalente. No equivale al balance hídrico completo."),
+        ("ETo Hargreaves", "Estima la evapotranspiración de referencia con Tmin y Tmax de ERA5-Land, latitud y radiación extraterrestre FAO-56."),
+        ("Balance P−ETo", "Resume de forma simplificada el superávit o déficit climático antecedente usando la ETo Hargreaves. No equivale al balance hídrico completo."),
         ("SPI", "Estandariza la precipitación en escalas de 1, 3 y 6 meses para contextualizar la sequía meteorológica."),
     ]
     for col, (title, text) in zip(cards, explanations):
@@ -2769,7 +2841,7 @@ with tab_geo:
             [
                 "DEM",
                 "Precipitación media mensual histórica",
-                "ETo equivalente media mensual histórica",
+                "ETo Hargreaves media mensual histórica",
                 "SPI-1 raster",
                 "SPI-3 raster",
                 "SPI-6 raster",
@@ -2925,7 +2997,7 @@ with tab_geo:
                   <b>Capa mostrada:</b> {geo_variable}<br><br>
                   <b>Mes/año:</b> {geo_period.strftime('%m/%Y')}<br><br>
                   <b>Precipitación:</b> CHIRPS diario mediante GEE<br><br>
-                  <b>ETo equivalente:</b> evaporación potencial diaria ERA5-Land mediante GEE<br><br>
+                  <b>ETo Hargreaves:</b> Tmin/Tmax ERA5-Land y radiación extraterrestre FAO-56 mediante GEE<br><br>
                   <b>SPI:</b> ajuste gamma sobre CHIRPS<br><br>
                   <b>Cuencas:</b> HydroBASINS nivel 7 mediante GEE<br><br>
                   <b>Cauce principal:</b> Geojson desde GitHub
@@ -2990,12 +3062,12 @@ with tab_method:
         (
             "10",
             "Contextualizar con clima",
-            "Precipitación, ETo equivalente, balance climático y SPI ayudan a interpretar el evento, pero no sustituyen la señal hidrométrica.",
+            "Precipitación, ETo Hargreaves, balance climático y SPI ayudan a interpretar el evento, pero no sustituyen la señal hidrométrica.",
         ),
         (
             "11",
             "Construir el geoportal",
-            "El DEM SRTM y los rasters de precipitación, ETo equivalente y SPI se consultan en GEE y se recortan al área aportante; se combinan con las subcuencas, la estación Guardia y el cauce principal.",
+            "El DEM SRTM y los rasters de precipitación, ETo Hargreaves y SPI se consultan en GEE y se recortan al área aportante; se combinan con las subcuencas, la estación Guardia y el cauce principal.",
         ),
         (
             "12",
@@ -3043,10 +3115,10 @@ with tab_method:
             - **Estado diario:** normal, bajo, muy bajo o extremadamente bajo según P20, P10 y P05 mensuales.
             - **Persistencia:** vigilancia durante los primeros seis días bajo P20 y confirmación al séptimo día.
             - **Severidad:** moderada hasta {P50_SEVERIDAD:.4f} m·día; severa entre {P50_SEVERIDAD:.4f} y {P75_SEVERIDAD:.4f} m·día; extrema por encima de {P75_SEVERIDAD:.4f} m·día.
-            - **Contexto climático:** precipitación, ETo equivalente, balance P−ETo y SPI no definen por sí solos la alerta.
+            - **Contexto climático:** precipitación, ETo Hargreaves, balance P−ETo y SPI no definen por sí solos la alerta.
             - **Fuentes GEE:** CHIRPS diario, ERA5-Land diario, SRTM 30 m e HydroBASINS nivel 7.
             - **Período climático común:** CHIRPS y ERA5-Land se recortan automáticamente a la menor de sus últimas fechas disponibles; el visor usa solo los años calendario completos de ese mismo período.
-            - **ETo equivalente:** se obtiene como `max(−potential_evaporation_sum × 1000, 0)` en mm/día. Es evaporación potencial de ERA5-Land y no una ETo FAO-56 calculada con datos de estación.
+            - **ETo Hargreaves:** se calcula diariamente como `0.0023 × (Tmedia + 17.8) × √(Tmax−Tmin) × Ra`. Tmin y Tmax provienen de ERA5-Land; Ra se calcula por píxel con la latitud y el día del año según FAO-56. Es una estimación con reanálisis y no sustituye una ETo FAO-56 Penman–Monteith validada con estación.
             - **Pronóstico:** ICON aporta la lluvia; el nivel es un escenario estadístico preliminar anclado al último registro disponible, no una predicción operativa.
             - **Alcance:** los umbrales y el modelo ridge requieren una fase posterior de validación, actualización de nivel e incorporación de incertidumbre.
             """
