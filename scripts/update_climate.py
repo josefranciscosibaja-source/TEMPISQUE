@@ -284,7 +284,7 @@ def hargreaves_eto_image(image: ee.Image) -> ee.Image:
         extraterrestrial_radiation_mj.multiply(MJ_M2_TO_MM_WATER)
     )
 
-    return (
+    eto_image = (
         tmean_c.add(17.8)
         .max(0)
         .multiply(temperature_range.sqrt())
@@ -292,7 +292,9 @@ def hargreaves_eto_image(image: ee.Image) -> ee.Image:
         .multiply(0.0023)
         .max(0)
         .rename("eto_media_cuenca_mm")
-        .copyProperties(image, ["system:time_start"])
+    )
+    return ee.Image(
+        eto_image.copyProperties(image, ["system:time_start"])
     )
 
 
@@ -301,7 +303,7 @@ def era5_to_feature(
     geometry: ee.Geometry,
 ) -> ee.Feature:
     image = ee.Image(image)
-    eto_image = hargreaves_eto_image(image)
+    eto_image = ee.Image(hargreaves_eto_image(image))
     mean_value = eto_image.reduceRegion(
         reducer=ee.Reducer.mean(),
         geometry=geometry,
