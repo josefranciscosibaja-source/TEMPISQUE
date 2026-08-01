@@ -1740,33 +1740,28 @@ def get_geoportal_tile_url(
             }
             label = "DEM SRTM 30 m"
             legend = {"min": "0 m", "max": "1800 m", "palette": vis["palette"]}
-        elif variable == "Precipitación media mensual histórica":
-            years = ee.List.sequence(SPI_BASE_START, SPI_BASE_END)
-            image = ee.ImageCollection.fromImages(
-                years.map(lambda year: _monthly_chirps_total(year, month))
-            ).mean()
+        elif variable == "Precipitación acumulada mensual":
+            image = _monthly_chirps_total(int(selected.year), month)
             vis = {
                 "min": 0,
                 "max": 450,
                 "palette": ["F7FBFF", "C6DBEF", "6BAED6", "2171B5", "08306B"],
             }
-            label = f"Precipitación media de {MESES[month - 1]} · CHIRPS {SPI_BASE_START}–{SPI_BASE_END}"
+            label = (
+                f"Precipitación acumulada · {MESES[month - 1]} "
+                f"{selected.year} · CHIRPS"
+            )
             legend = {"min": "0 mm/mes", "max": "450 mm/mes", "palette": vis["palette"]}
-        elif variable == "ETo Hargreaves media mensual histórica":
-            years = ee.List.sequence(SPI_BASE_START, SPI_BASE_END)
-            image = ee.ImageCollection.fromImages(
-                years.map(
-                    lambda year: _monthly_era5_eto_total(year, month)
-                )
-            ).mean()
+        elif variable == "ETo Hargreaves acumulada mensual":
+            image = _monthly_era5_eto_total(int(selected.year), month)
             vis = {
                 "min": 60,
                 "max": 220,
                 "palette": ["FFF7BC", "FEC44F", "FE9929", "EC7014", "CC4C02", "8C2D04"],
             }
             label = (
-                f"ETo Hargreaves media de {MESES[month - 1]} · "
-                f"ERA5-Land/FAO-56 {SPI_BASE_START}–{SPI_BASE_END}"
+                f"ETo Hargreaves acumulada · {MESES[month - 1]} "
+                f"{selected.year} · ERA5-Land/FAO-56"
             )
             legend = {"min": "60 mm/mes", "max": "220 mm/mes", "palette": vis["palette"]}
         else:
@@ -2267,6 +2262,12 @@ with st.sidebar:
     st.markdown("### Filtros del análisis")
     min_date = level["fecha"].min().date()
     max_date = level["fecha"].max().date()
+    last_date_2021 = level.loc[level["fecha"].dt.year.eq(2021), "fecha"].max()
+    year_2021_note = (
+        f"En 2021 solamente existen datos hasta el {last_date_2021:%d/%m/%Y}."
+        if pd.notna(last_date_2021)
+        else "La serie no contiene datos de 2021."
+    )
     default_date = min(pd.Timestamp("2020-05-08").date(), max_date)
     selected_date = pd.Timestamp(
         st.date_input(
@@ -2275,7 +2276,17 @@ with st.sidebar:
             min_value=min_date,
             max_value=max_date,
             format="DD/MM/YYYY",
+            help=(
+                f"Cobertura disponible: {min_date:%d/%m/%Y}–"
+                f"{max_date:%d/%m/%Y}. {year_2021_note} "
+                "También puede escribir la fecha "
+                "directamente en formato DD/MM/AAAA."
+            ),
         )
+    )
+    st.caption(
+        f"Serie de nivel disponible: {min_date:%d/%m/%Y}–{max_date:%d/%m/%Y}. "
+        f"{year_2021_note}"
     )
 
     period_label = st.selectbox(
@@ -2840,8 +2851,8 @@ with tab_geo:
             "Variable espacial",
             [
                 "DEM",
-                "Precipitación media mensual histórica",
-                "ETo Hargreaves media mensual histórica",
+                "Precipitación acumulada mensual",
+                "ETo Hargreaves acumulada mensual",
                 "SPI-1 raster",
                 "SPI-3 raster",
                 "SPI-6 raster",
@@ -2996,8 +3007,8 @@ with tab_geo:
                 <div class="panel">
                   <b>Capa mostrada:</b> {geo_variable}<br><br>
                   <b>Mes/año:</b> {geo_period.strftime('%m/%Y')}<br><br>
-                  <b>Precipitación:</b> CHIRPS diario mediante GEE<br><br>
-                  <b>ETo Hargreaves:</b> Tmin/Tmax ERA5-Land y radiación extraterrestre FAO-56 mediante GEE<br><br>
+                  <b>Precipitación:</b> acumulado CHIRPS del mes/año seleccionado mediante GEE<br><br>
+                  <b>ETo Hargreaves:</b> acumulado del mes/año seleccionado con Tmin/Tmax ERA5-Land y radiación extraterrestre FAO-56<br><br>
                   <b>SPI:</b> ajuste gamma sobre CHIRPS<br><br>
                   <b>Cuencas:</b> HydroBASINS nivel 7 mediante GEE<br><br>
                   <b>Cauce principal:</b> Geojson desde GitHub
@@ -3067,7 +3078,7 @@ with tab_method:
         (
             "11",
             "Construir el geoportal",
-            "El DEM SRTM y los rasters de precipitación, ETo Hargreaves y SPI se consultan en GEE y se recortan al área aportante; se combinan con las subcuencas, la estación Guardia y el cauce principal.",
+            "El DEM SRTM y los rasters mensuales de precipitación acumulada, ETo Hargreaves acumulada y SPI se consultan en GEE para el mes/año seleccionado y se recortan al área aportante; se combinan con las subcuencas, la estación Guardia y el cauce principal.",
         ),
         (
             "12",
