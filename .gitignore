@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.streamlit/secrets.toml
+*service-account*.json
+*service_account*.json
+*gee-key*.json
+*credentials*.json
+.DS_Store
