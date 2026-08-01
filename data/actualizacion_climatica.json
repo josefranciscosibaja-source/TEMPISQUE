@@ -5,5 +5,7 @@
   "ultima_fecha_era5_land": "2026-07-24",
   "ultima_fecha_comun": "2026-06-30",
   "periodo_inicio": "1981-01-01",
-  "metodo_actualizacion": "Incremental con siete días de superposición"
+  "metodo_actualizacion": "Incremental con siete días de superposición",
+  "metodo_eto_id": "hargreaves_fao56_era5_land_v1",
+  "metodo_eto": "Hargreaves FAO-56 con Tmin/Tmax ERA5-Land y radiación extraterrestre calculada por píxel"
 }
