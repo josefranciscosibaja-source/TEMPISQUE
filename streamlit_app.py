@@ -2928,7 +2928,7 @@ with tab_geo:
                   <b>ETo equivalente:</b> evaporación potencial diaria ERA5-Land mediante GEE<br><br>
                   <b>SPI:</b> ajuste gamma sobre CHIRPS<br><br>
                   <b>Cuencas:</b> HydroBASINS nivel 7 mediante GEE<br><br>
-                  <b>Cauce principal:</b> cauce_tempisque.geojson desde GitHub
+                  <b>Cauce principal:</b> Geojson desde GitHub
                 </div>
                 """,
                 unsafe_allow_html=True,
