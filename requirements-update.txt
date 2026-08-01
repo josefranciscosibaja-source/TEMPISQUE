@@ -1,0 +1,5 @@
+earthengine-api>=1.5,<2
+google-auth>=2.35,<3
+numpy>=1.26,<3
+pandas>=2.2,<4
+scipy>=1.13,<2
