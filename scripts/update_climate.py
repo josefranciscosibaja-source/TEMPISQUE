@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -46,6 +47,15 @@ EE_SCOPES = [
     "https://www.googleapis.com/auth/earthengine",
     "https://www.googleapis.com/auth/cloud-platform",
 ]
+
+ETO_METHOD_ID = "hargreaves_fao56_era5_land_v1"
+ETO_METHOD_DESCRIPTION = (
+    "Hargreaves FAO-56 con Tmin/Tmax ERA5-Land y radiación "
+    "extraterrestre calculada por píxel"
+)
+MAX_REASONABLE_DAILY_ETO_MM = 20.0
+SOLAR_CONSTANT_MJ_M2_MIN = 0.0820
+MJ_M2_TO_MM_WATER = 0.408
 
 
 def parse_args() -> argparse.Namespace:
@@ -220,17 +230,78 @@ def chirps_to_feature(
     )
 
 
+def hargreaves_eto_image(image: ee.Image) -> ee.Image:
+    """Calcula ETo Hargreaves diaria en mm/día para cada píxel.
+
+    La radiación extraterrestre se calcula según FAO-56 a partir de la
+    latitud del píxel y el día del año. ERA5-Land aporta Tmin y Tmax en K.
+    """
+    image = ee.Image(image)
+    tmin_c = image.select("temperature_2m_min").subtract(273.15)
+    tmax_c = image.select("temperature_2m_max").subtract(273.15)
+    tmean_c = tmin_c.add(tmax_c).divide(2)
+    temperature_range = tmax_c.subtract(tmin_c).max(0)
+
+    day_of_year = ee.Number(
+        image.date().getRelative("day", "year")
+    ).add(1)
+    orbital_angle = day_of_year.multiply(2 * math.pi / 365)
+    inverse_distance = ee.Number(1).add(
+        orbital_angle.cos().multiply(0.033)
+    )
+    solar_declination = orbital_angle.subtract(1.39).sin().multiply(0.409)
+    declination_image = ee.Image.constant(solar_declination)
+
+    latitude_rad = (
+        ee.Image.pixelLonLat()
+        .select("latitude")
+        .multiply(math.pi / 180)
+    )
+    sunset_angle = (
+        latitude_rad.tan()
+        .multiply(declination_image.tan())
+        .multiply(-1)
+        .clamp(-1, 1)
+        .acos()
+    )
+    extraterrestrial_radiation_mj = (
+        ee.Image.constant(
+            (24 * 60 / math.pi) * SOLAR_CONSTANT_MJ_M2_MIN
+        )
+        .multiply(inverse_distance)
+        .multiply(
+            sunset_angle
+            .multiply(latitude_rad.sin())
+            .multiply(declination_image.sin())
+            .add(
+                latitude_rad.cos()
+                .multiply(declination_image.cos())
+                .multiply(sunset_angle.sin())
+            )
+        )
+    )
+    extraterrestrial_radiation_mm = (
+        extraterrestrial_radiation_mj.multiply(MJ_M2_TO_MM_WATER)
+    )
+
+    return (
+        tmean_c.add(17.8)
+        .max(0)
+        .multiply(temperature_range.sqrt())
+        .multiply(extraterrestrial_radiation_mm)
+        .multiply(0.0023)
+        .max(0)
+        .rename("eto_media_cuenca_mm")
+        .copyProperties(image, ["system:time_start"])
+    )
+
+
 def era5_to_feature(
     image: ee.Image,
     geometry: ee.Geometry,
 ) -> ee.Feature:
     image = ee.Image(image)
-    eto_image = (
-        image.select("potential_evaporation_sum")
-        .multiply(-1000)
-        .max(0)
-        .rename("eto_media_cuenca_mm")
-    )
+    eto_image = hargreaves_eto_image(image)
     mean_value = eto_image.reduceRegion(
         reducer=ee.Reducer.mean(),
         geometry=geometry,
@@ -378,6 +449,20 @@ def validate_new_period(
         raise RuntimeError(
             "Se detectaron valores negativos no válidos en lluvia o ETo."
         )
+    if not np.isfinite(
+        merged[["lluvia_mm", "eto_media_cuenca_mm"]].to_numpy()
+    ).all():
+        raise RuntimeError(
+            "Se detectaron valores climáticos no finitos."
+        )
+    eto_max = float(merged["eto_media_cuenca_mm"].max())
+    if eto_max > MAX_REASONABLE_DAILY_ETO_MM:
+        raise RuntimeError(
+            "La ETo Hargreaves supera el control de consistencia de "
+            f"{MAX_REASONABLE_DAILY_ETO_MM:.1f} mm/día "
+            f"(máximo obtenido: {eto_max:.2f} mm/día). "
+            "Revise temperaturas, radiación y unidades antes de publicar."
+        )
     return merged
 
 
@@ -444,12 +529,13 @@ def build_climate_table(
 
     combined["fuente_precipitacion"] = CHIRPS_ASSET
     combined["fuente_eto"] = (
-        f"{ERA5_ASSET}:potential_evaporation_sum"
+        f"{ERA5_ASSET}:temperature_2m_min,temperature_2m_max"
     )
-    combined["metodo_eto_diaria"] = (
-        "ETo equivalente = max(-potential_evaporation_sum × 1000, 0)"
+    combined["metodo_eto_id"] = ETO_METHOD_ID
+    combined["metodo_eto_diaria"] = ETO_METHOD_DESCRIPTION
+    combined["eto_origen"] = (
+        "Hargreaves FAO-56 con temperaturas ERA5-Land"
     )
-    combined["eto_origen"] = "ERA5-Land diario"
     combined["periodo_comun_inicio"] = CLIMATE_START.strftime("%Y-%m-%d")
     combined["periodo_comun_fin"] = common_last.strftime("%Y-%m-%d")
     return combined
@@ -571,6 +657,8 @@ def write_status(
         "metodo_actualizacion": (
             "Incremental con siete días de superposición"
         ),
+        "metodo_eto_id": ETO_METHOD_ID,
+        "metodo_eto": ETO_METHOD_DESCRIPTION,
     }
     atomic_write_text(
         path,
@@ -610,6 +698,22 @@ def main() -> int:
         if args.full_refresh
         else read_existing_climate(climate_path)
     )
+    if not existing.empty:
+        method_ids = set(
+            existing.get(
+                "metodo_eto_id",
+                pd.Series(dtype="string"),
+            )
+            .dropna()
+            .astype(str)
+            .unique()
+        )
+        if method_ids != {ETO_METHOD_ID}:
+            print(
+                "      Cambió el método de ETo: se reconstruirá todo "
+                "el histórico con Hargreaves."
+            )
+            existing = pd.DataFrame()
 
     if existing.empty:
         update_start = CLIMATE_START
@@ -646,10 +750,10 @@ def main() -> int:
         label="CHIRPS",
     )
 
-    print("5/6 · Extrayendo ETo equivalente ERA5-Land…")
+    print("5/6 · Calculando ETo Hargreaves con ERA5-Land…")
     eto = extract_daily_series(
         ee.ImageCollection(ERA5_ASSET).select(
-            "potential_evaporation_sum"
+            ["temperature_2m_min", "temperature_2m_max"]
         ),
         era5_to_feature,
         geometry,
