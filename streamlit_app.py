@@ -2284,10 +2284,6 @@ with st.sidebar:
             ),
         )
     )
-    st.caption(
-        f"Serie de nivel disponible: {min_date:%d/%m/%Y}–{max_date:%d/%m/%Y}. "
-        f"{year_2021_note}"
-    )
 
     period_label = st.selectbox(
         "Período de visualización",
