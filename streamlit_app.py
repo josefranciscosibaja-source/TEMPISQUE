@@ -2944,13 +2944,13 @@ with tab_method:
     methodology_steps = [
         (
             "1",
-            "Cargar nivel y cauce",
-            "El CSV de nivel y el GeoJSON del cauce principal del río Tempisque se descargan directamente desde GitHub.",
+            "Cargar los insumos",
+            "El CSV de nivel y el GeoJSON del cauce principal del río Tempisque se cargan desde el repositorio en GitHub.",
         ),
         (
             "2",
-            "Delinear el área aportante",
-            "Las subcuencas HydroBASINS nivel 7 previamente delineadas con NEXT_DOWN se conservan en GitHub; su unión define el área que descarga hacia Guardia.",
+            "Definir el área aportante",
+            "Las subcuencas HydroBASINS nivel 7, previamente delimitadas con NEXT_DOWN, se cargan desde GitHub; su unión define el área que descarga hacia la estación Guardia.",
         ),
         (
             "3",
@@ -2960,7 +2960,7 @@ with tab_method:
         (
             "4",
             "Calcular el SPI",
-            "Los acumulados CHIRPS de 1, 3 y 6 meses se ajustan por mes a una distribución gamma y se transforman a la normal estándar.",
+            "La precipitación CHIRPS se acumula en escalas de 1, 3 y 6 meses completos; posteriormente se ajusta por mes a una distribución gamma y se transforma a la normal estándar usando años calendario completos.",
         ),
         (
             "5",
@@ -2995,12 +2995,12 @@ with tab_method:
         (
             "11",
             "Construir el geoportal",
-            "SRTM, precipitación, ETo equivalente y SPI se generan en GEE y se combinan con HydroBASINS, la estación y únicamente el cauce principal descargado de GitHub.",
+            "El DEM SRTM y los rasters de precipitación, ETo equivalente y SPI se consultan en GEE y se recortan al área aportante; se combinan con las subcuencas, la estación Guardia y el cauce principal.",
         ),
         (
             "12",
             "Proyectar siete días",
-            "Los acumulados ICON se convierten en lluvia media diaria del área aportante aguas arriba de Guardia y alimentan un escenario ridge; a cada nivel proyectado se aplican los umbrales, la persistencia y la severidad.",
+            "La lluvia ICON disponible se promedia sobre el área aportante y se incorpora a un modelo estadístico de regresión regularizada entrenado con el nivel actual, su tendencia, la lluvia antecedente, el balance P−ETo, el SPI-1 y la estacionalidad. El nivel se proyecta día a día y se evalúa con los umbrales, la persistencia y la severidad del SAT.",
         ),
     ]
 
