@@ -46,8 +46,7 @@ P75_SEVERIDAD = 1.1119
 EE_PROJECT_FALLBACK = os.getenv("EE_PROJECT", "proyecto-catie")
 GEE_KEY_PATH = Path(os.getenv("GEE_SERVICE_ACCOUNT_FILE", ""))
 
-# Geometrías del área aportante. La versión automatizada puede operar
-# directamente con subcuencas_guardia.geojson, sin depender de Colab.
+# Geometrías del área aportante. 
 BASIN_FILES = [
     "cuenca_aportante_guardia_gee.geojson",
 ]
