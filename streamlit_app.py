@@ -2189,7 +2189,7 @@ def create_forecast_map(forecast_record: dict) -> folium.Map:
 # =============================================================================
 with st.sidebar:
     st.markdown("## SAT Guardia")
-    st.caption("Prototipo de alerta temprana por estiaje hidrométrico")
+    st.caption("Plataforma de monitoreo y alerta por estiaje hidrométrico.")
     st.markdown("---")
 
     st.markdown("### Filtros del análisis")
@@ -2999,7 +2999,7 @@ with tab_method:
         ),
         (
             "12",
-            "Proyectar siete días",
+            "Proyectar el horizonte disponible",
             "La lluvia ICON disponible se promedia sobre el área aportante y se incorpora a un modelo estadístico de regresión regularizada entrenado con el nivel actual, su tendencia, la lluvia antecedente, el balance P−ETo, el SPI-1 y la estacionalidad. El nivel se proyecta día a día y se evalúa con los umbrales, la persistencia y la severidad del SAT.",
         ),
     ]
