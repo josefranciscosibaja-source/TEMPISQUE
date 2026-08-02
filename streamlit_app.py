@@ -2619,11 +2619,6 @@ with tab_level:
 
 with tab_climate:
     st.markdown("## Contexto climático antecedente")
-    st.caption(
-        "Precipitación, ETo Hargreaves, balance climático e SPI se "
-        "interpretan como contexto y no como predictores directos del nivel. "
-        f"Última fecha común disponible: {CLIMATE_COMMON_END_DATE:%d/%m/%Y}."
-    )
     download_climate, download_spi = st.columns(2)
     with download_climate:
         st.download_button(
