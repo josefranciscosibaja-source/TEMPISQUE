@@ -2461,7 +2461,6 @@ with tab_summary:
 
 with tab_level:
     st.markdown("## Monitoreo hidrométrico y motor de alertas")
-    st.caption("La lectura diaria, la estacionalidad y la persistencia se presentan como resultados complementarios.")
     st.download_button(
         "Descargar serie hidrométrica completa",
         data=csv_bytes(level),
