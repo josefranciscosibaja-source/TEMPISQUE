@@ -54,9 +54,38 @@ SUBBASIN_FILES = [
     "subcuencas_guardia.geojson",
     "cuencas_aportantes_guardia_gee.geojson",
 ]
+TEMPISQUE_BASIN_FILES = [
+    "cuenca_tempisque.geojson",
+]
 RIVER_FILES = [
     "cauce_tempisque.geojson",
 ]
+
+# Simbología común para todos los visores.
+# La cuenca completa funciona únicamente como referencia espacial:
+# nunca se usa como geometría de recorte de los rásteres.
+TEMPISQUE_BASIN_STYLE = {
+    "color": "#9A8060",
+    "weight": 2.2,
+    "opacity": 0.95,
+    "fillColor": "#F2E9DC",
+    "fillOpacity": 0.01,
+    "dashArray": "8, 6",
+}
+CONTRIBUTING_BASIN_STYLE = {
+    "color": "#17324D",
+    "weight": 3.0,
+    "opacity": 1.0,
+    "fillColor": "#247B7B",
+    "fillOpacity": 0.04,
+}
+CONTRIBUTING_SUBBASIN_STYLE = {
+    "color": "#0F6F73",
+    "weight": 1.8,
+    "opacity": 0.95,
+    "fillColor": "#3F9891",
+    "fillOpacity": 0.08,
+}
 
 ICON_FORECAST_URLS = {
     1: "https://data.meteo.tech/icon/a_pcpn_24.tif",
@@ -290,6 +319,25 @@ def _first_existing(names: Iterable[str]) -> Path | None:
         if path.exists():
             return path
     return None
+
+
+def _add_tempisque_basin_layer(
+    map_obj: folium.Map,
+) -> folium.GeoJson | None:
+    """Agrega el límite de la cuenca completa sin afectar los recortes."""
+    tempisque_path = _first_existing(TEMPISQUE_BASIN_FILES)
+    if tempisque_path is None:
+        return None
+
+    tempisque_layer = folium.GeoJson(
+        json.loads(tempisque_path.read_text(encoding="utf-8")),
+        name="Cuenca del río Tempisque",
+        style_function=lambda _: TEMPISQUE_BASIN_STYLE.copy(),
+        tooltip="Límite de la cuenca del río Tempisque",
+        show=True,
+    )
+    tempisque_layer.add_to(map_obj)
+    return tempisque_layer
 
 
 def _standardize_date(df: pd.DataFrame) -> pd.DataFrame:
@@ -1930,10 +1978,8 @@ def create_map(
             basin_geojson,
             name="Área aportante a Guardia",
             style_function=lambda _: {
-                "color": NAVY,
-                "weight": 2.3,
-                "fillColor": "#9CC7D4",
-                "fillOpacity": .16 if compact else .04,
+                **CONTRIBUTING_BASIN_STYLE,
+                "fillOpacity": 0.10 if compact else 0.04,
             },
             tooltip="Área aportante aguas arriba de Guardia",
         )
@@ -1948,15 +1994,14 @@ def create_map(
         subbasin_layer = folium.GeoJson(
             json.loads(subbasin_path.read_text(encoding="utf-8")),
             name="Subcuencas aportantes a Guardia",
-            style_function=lambda _: {
-                "color": TEAL,
-                "weight": 1.45,
-                "fillColor": "#B9D9D4",
-                "fillOpacity": .10,
-            },
+            style_function=lambda _: CONTRIBUTING_SUBBASIN_STYLE.copy(),
             tooltip="Subcuencas aportantes aguas arriba de Guardia",
         )
         subbasin_layer.add_to(map_obj)
+
+    # Referencia general visible en el resumen y en el geoportal.
+    _add_tempisque_basin_layer(map_obj)
+
     if river_path:
         folium.GeoJson(
             json.loads(river_path.read_text(encoding="utf-8")),
@@ -2202,9 +2247,8 @@ def create_forecast_map(forecast_record: dict) -> folium.Map:
             json.loads(basin_path.read_text(encoding="utf-8")),
             name="Cuenca aportante",
             style_function=lambda _: {
-                "color": NAVY,
-                "weight": 2.3,
-                "fillOpacity": 0,
+                **CONTRIBUTING_BASIN_STYLE,
+                "fillOpacity": 0.02,
             },
         ).add_to(map_obj)
     if subbasin_path:
@@ -2212,14 +2256,16 @@ def create_forecast_map(forecast_record: dict) -> folium.Map:
             json.loads(subbasin_path.read_text(encoding="utf-8")),
             name="Subcuencas aportantes a Guardia",
             style_function=lambda _: {
-                "color": TEAL,
-                "weight": 1.45,
-                "fillColor": "#B9D9D4",
-                "fillOpacity": .08,
+                **CONTRIBUTING_SUBBASIN_STYLE,
+                "fillOpacity": 0.06,
             },
             tooltip="Subcuencas aportantes aguas arriba de Guardia",
         )
         subbasin_layer.add_to(map_obj)
+
+    # Referencia general visible en el visor del pronóstico.
+    _add_tempisque_basin_layer(map_obj)
+
     if river_path:
         folium.GeoJson(
             json.loads(river_path.read_text(encoding="utf-8")),
@@ -2284,11 +2330,6 @@ with st.sidebar:
             ),
         )
     )
-    st.caption(
-        f"Serie de nivel disponible: {min_date:%d/%m/%Y}–{max_date:%d/%m/%Y}. "
-        f"{year_2021_note}"
-    )
-
     period_label = st.selectbox(
         "Período de visualización",
         ["7 días", "15 días", "30 días", "90 días"],
