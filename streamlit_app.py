@@ -2396,7 +2396,7 @@ tab_summary, tab_level, tab_climate, tab_forecast, tab_geo, tab_method = st.tabs
         "Contexto climático",
         "Pronóstico",
         "Geoportal",
-        "Metodología paso a paso",
+        "Metodología",
     ]
 )
 
