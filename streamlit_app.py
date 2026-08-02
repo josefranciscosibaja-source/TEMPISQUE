@@ -3002,10 +3002,7 @@ with tab_geo:
             ):
                 with column:
                     kpi_card(label, value, note)
-            st.caption(
-                f"{dem_status}. Los valores describen la geometría utilizada "
-                "para los análisis climáticos y el pronóstico."
-            )
+            
         else:
             st.warning(dem_status)
 
