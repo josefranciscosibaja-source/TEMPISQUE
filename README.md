@@ -1,7 +1,5 @@
 # SAT de Estiaje Hidrométrico — Estación Guardia
 
-Versión preparada para publicación permanente con Streamlit Community Cloud.
-
 ## Componentes
 
 - `streamlit_app.py`: dashboard.
@@ -9,8 +7,6 @@ Versión preparada para publicación permanente con Streamlit Community Cloud.
 - `.github/workflows/update_climate.yml`: ejecución automática diaria.
 - `requirements.txt`: dependencias de Streamlit.
 - `requirements-update.txt`: dependencias del actualizador.
-- `GUIA_PUBLICACION.md`: instrucciones completas para una primera experiencia
-  con GitHub.
 
 ## Flujo de datos
 
@@ -20,6 +16,3 @@ Versión preparada para publicación permanente con Streamlit Community Cloud.
 - SPI-1, SPI-3 y SPI-6: ajuste gamma sobre CHIRPS.
 - Pronóstico: GeoTIFF ICON descargado automáticamente por la aplicación.
 - Geoportal: rasters consultados directamente desde GEE.
-
-Antes de desplegar la aplicación, siga
-[GUIA_PUBLICACION.md](GUIA_PUBLICACION.md).
