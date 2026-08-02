@@ -3057,11 +3057,7 @@ with tab_geo:
             )
 
 with tab_method:
-    st.markdown("## Construcción del SAT paso a paso")
-    st.caption(
-        "Esta sección documenta qué hace la plataforma desde la carga de datos "
-        "hasta la asignación de la alerta."
-    )
+    st.markdown("## Construcción del SAT")
 
     methodology_steps = [
         (
