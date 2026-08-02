@@ -50,20 +50,17 @@ GEE_KEY_PATH = Path(os.getenv("GEE_SERVICE_ACCOUNT_FILE", ""))
 BASIN_FILES = [
     "cuenca_aportante_guardia_gee.geojson",
 ]
+TEMPISQUE_BASIN_FILES = [
+    "cuenca_tempisque.geojson",
+]
 SUBBASIN_FILES = [
     "subcuencas_guardia.geojson",
     "cuencas_aportantes_guardia_gee.geojson",
-]
-TEMPISQUE_BASIN_FILES = [
-    "cuenca_tempisque.geojson",
 ]
 RIVER_FILES = [
     "cauce_tempisque.geojson",
 ]
 
-# Simbología común para todos los visores.
-# La cuenca completa funciona únicamente como referencia espacial:
-# nunca se usa como geometría de recorte de los rásteres.
 TEMPISQUE_BASIN_STYLE = {
     "color": "#9A8060",
     "weight": 2.2,
@@ -1999,7 +1996,7 @@ def create_map(
         )
         subbasin_layer.add_to(map_obj)
 
-    # Referencia general visible en el resumen y en el geoportal.
+    # Referencia espacial general; no se utiliza para recortar los rásteres.
     _add_tempisque_basin_layer(map_obj)
 
     if river_path:
@@ -2263,7 +2260,7 @@ def create_forecast_map(forecast_record: dict) -> folium.Map:
         )
         subbasin_layer.add_to(map_obj)
 
-    # Referencia general visible en el visor del pronóstico.
+    # Referencia espacial general; no se utiliza para recortar ICON.
     _add_tempisque_basin_layer(map_obj)
 
     if river_path:
@@ -2330,6 +2327,7 @@ with st.sidebar:
             ),
         )
     )
+
     period_label = st.selectbox(
         "Período de visualización",
         ["7 días", "15 días", "30 días", "90 días"],
