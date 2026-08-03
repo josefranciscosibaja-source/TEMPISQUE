@@ -2,7 +2,7 @@
   "estado": "actualizado",
   "proyecto_gee": "proyecto-catie",
   "ultima_fecha_chirps": "2026-06-30",
-  "ultima_fecha_era5_land": "2026-07-24",
+  "ultima_fecha_era5_land": "2026-07-26",
   "ultima_fecha_comun": "2026-06-30",
   "periodo_inicio": "1981-01-01",
   "metodo_actualizacion": "Incremental con siete días de superposición",
