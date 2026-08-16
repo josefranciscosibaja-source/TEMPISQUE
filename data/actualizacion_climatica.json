@@ -1,9 +1,9 @@
 {
   "estado": "actualizado",
   "proyecto_gee": "proyecto-catie",
-  "ultima_fecha_chirps": "2026-06-30",
-  "ultima_fecha_era5_land": "2026-08-06",
-  "ultima_fecha_comun": "2026-06-30",
+  "ultima_fecha_chirps": "2026-07-31",
+  "ultima_fecha_era5_land": "2026-08-09",
+  "ultima_fecha_comun": "2026-07-31",
   "periodo_inicio": "1981-01-01",
   "metodo_actualizacion": "Incremental con siete días de superposición",
   "metodo_eto_id": "hargreaves_fao56_era5_land_v1",
